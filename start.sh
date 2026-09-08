@@ -15,7 +15,10 @@
 # for Docker sets DATA_DIR=/app/data — native cannot write there, so it is
 # redirected to ~/.9router (warned below).
 
-set -euo pipefail
+# POSIX sh (dash) compatible: `sh start.sh` must work, so pipefail is optional
+# (bash-only). `set -e` keeps failures fatal; `-u` catches unset vars.
+set -eu
+set -o pipefail 2>/dev/null || true
 cd "$(dirname "$0")"
 
 APP_NAME=9router
