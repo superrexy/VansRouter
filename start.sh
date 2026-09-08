@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 9Router start script.
+# VansRouter start script.
 #
 # Behaviour:
 #   1. git pull --ff-only (best effort).
@@ -7,15 +7,18 @@
 #      build. The comparison is against a build stamp (HEAD sha + dirty tree),
 #      NOT against "did the pull above change HEAD" — so a manual `git pull`
 #      run before this script still triggers a rebuild of the new code.
-#   3. If a working Docker daemon exists: docker build (unless skipped) and
-#      recreate the `9router` container exactly like the original script.
+#   3. If a working Docker daemon exists: bring the stack up with docker compose.
+#      The `vansrouter` service is built locally from the repo Dockerfile
+#      (docker-compose.yml `build: .`); the `headroom` sidecar runs from its
+#      published image. Containers are managed by compose.
 #   4. If Docker is missing/broken: fall back to a native build + run with the
 #      same port (20128). This path never silently dies when Docker is down.
 #
-# Data: Docker keeps the named volume `9router-data`. The native fallback uses
-# $DATA_DIR from .env, else the app default ~/.9router. A .env that was written
-# for Docker sets DATA_DIR=/app/data — native cannot write there, so it is
-# redirected to ~/.9router (warned below).
+# Data: Docker keeps the named volume `9router-data` (declared in
+# docker-compose.yml). The native fallback uses $DATA_DIR from .env, else the
+# app default ~/.9router. A .env that was written for Docker sets
+# DATA_DIR=/app/data — native cannot write there, so it is redirected to
+# ~/.9router (warned below).
 
 # POSIX sh (dash) compatible: `sh start.sh` must work, so pipefail is optional
 # (bash-only). `set -e` keeps failures fatal; `-u` catches unset vars.
@@ -82,34 +85,23 @@ fi
 
 # ================================================================ DOCKER path
 if [ "$docker_ok" = 1 ]; then
-  if [ "$should_build" = 1 ] || ! docker image inspect "$APP_NAME" >/dev/null 2>&1; then
-    log "docker build -t $APP_NAME ."
-    docker build -t "$APP_NAME" .
+  if [ ! -f .env ]; then
+    log "WARN: .env missing — container runs with Dockerfile defaults only (INITIAL_PASSWORD=123456, etc.)"
+  fi
+
+  # Local image name from docker-compose.yml. Build only when the source changed
+  # or the image is missing; compose skips the rebuild when the image exists.
+  IMG_NAME=vansrouter:local
+  if [ "$should_build" = 1 ] || ! docker image inspect "$IMG_NAME" >/dev/null 2>&1; then
+    log "docker compose up -d --build (vansrouter built from local Dockerfile, headroom sidecar image)"
+    docker compose up -d --build
     save_stamp
   else
-    log "image up to date, skipping docker build"
+    log "source unchanged — docker compose up -d"
+    docker compose up -d
   fi
 
-  docker stop "$APP_NAME" >/dev/null 2>&1 || true
-  docker rm "$APP_NAME" >/dev/null 2>&1 || true
-
-  if [ -f .env ]; then
-    log "docker run -d --name $APP_NAME ... (http://localhost:20128)"
-    docker run -d --name "$APP_NAME" \
-      -p 20128:20128 \
-      --env-file .env \
-      -v 9router-data:/app/data \
-      "$APP_NAME"
-  else
-    log "WARN: .env missing — container runs with Dockerfile defaults only (INITIAL_PASSWORD=123456, etc.)"
-    log "docker run -d --name $APP_NAME ... (http://localhost:20128)"
-    docker run -d --name "$APP_NAME" \
-      -p 20128:20128 \
-      -v 9router-data:/app/data \
-      "$APP_NAME"
-  fi
-
-  log "done. Follow logs with: docker logs -f $APP_NAME"
+  log "done. Follow logs with: docker compose logs -f vansrouter"
   exit 0
 fi
 

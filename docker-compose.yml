@@ -6,7 +6,11 @@
 
 services:
   vansrouter:
-    image: ghcr.io/vanszs/vansrouter:latest
+    # Local build from the repo Dockerfile (used by start.sh). The image name is
+    # kept for registry-based deployments / caching; `docker compose up --build`
+    # prefers the local build.
+    build: .
+    image: vansrouter:local
     container_name: vansrouter
     restart: unless-stopped
     ports:
@@ -17,7 +21,8 @@ services:
       # Uncomment the line below and set TAILSCALE_USE_HOST_SOCKET=true in .env
       # - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       DATA_DIR: /app/data
       PORT: "20128"
@@ -30,7 +35,9 @@ services:
       headroom:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:20128/"]
+      # localhost resolves to ::1 in Alpine wget first; the server binds IPv4
+      # 0.0.0.0 only, so probe 127.0.0.1 explicitly.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:20128/"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -42,6 +49,11 @@ services:
     restart: unless-stopped
     ports:
       - "${HEADROOM_PORT:-8787}:8787"
+    environment:
+      # Bind on all interfaces inside the container so both the vansrouter
+      # service (http://headroom:8787) and host clients reach it.
+      HEADROOM_HOST: 0.0.0.0
+      HEADROOM_PORT: "8787"
 
 volumes:
   9router-data:
