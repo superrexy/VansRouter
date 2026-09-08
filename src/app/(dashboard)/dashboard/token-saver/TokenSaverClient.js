@@ -22,6 +22,7 @@ export default function TokenSaverClient() {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
+  const [sanitizeEnabled, setSanitizeEnabled] = useState(false);
   const [codeAware, setCodeAware] = useState(false);
   const [kompress, setKompress] = useState(true);
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
@@ -145,6 +146,11 @@ export default function TokenSaverClient() {
     patchSetting({ ponytailLevel: level });
   };
 
+  const handleSanitizeEnabled = (value) => {
+    setSanitizeEnabled(value);
+    patchSetting({ sanitizeEnabled: value });
+  };
+
   const togglePendingExtra = (extra) => {
     setPendingExtras((current) =>
       current.includes(extra)
@@ -206,6 +212,7 @@ export default function TokenSaverClient() {
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
+          setSanitizeEnabled(!!data.sanitizeEnabled);
           setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
           setGuards({
@@ -337,7 +344,7 @@ export default function TokenSaverClient() {
         </div>
 
         {/* Semaphore Limiter */}
-        <div className="flex items-center justify-between py-4 gap-4 flex-wrap">
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
             <p className="font-medium">Semaphore (Concurrency Limiter)</p>
             <p className="text-sm text-text-muted">
@@ -348,6 +355,22 @@ export default function TokenSaverClient() {
           <Toggle
             checked={guards.semaphore}
             onChange={() => updateGuard("semaphore", !guards.semaphore)}
+          />
+        </div>
+
+        {/* Sanitize (system prompt + tool schema) */}
+        <div className="flex items-center justify-between py-4 gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Sanitize System Prompt & Tool Schema</p>
+            <p className="text-sm text-text-muted">
+              Replaces detected agent/CLI system prompts with a neutral prompt and
+              cleans tool schemas (unsafe/meta keywords, unresolved refs) before
+              routing to the provider.
+            </p>
+          </div>
+          <Toggle
+            checked={sanitizeEnabled}
+            onChange={() => handleSanitizeEnabled(!sanitizeEnabled)}
           />
         </div>
       </Card>
