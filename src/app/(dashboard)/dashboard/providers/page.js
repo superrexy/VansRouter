@@ -124,13 +124,13 @@ export default function ProvidersPage() {
     return name.toLowerCase().includes(searchQuery.trim().toLowerCase());
   };
 
-  const sortByPriority = (entries, authType) =>
+  const sortByPriority = (entries) =>
     [...entries].sort(([ka, a], [kb, b]) => {
       const pa = a.priority ?? 999;
       const pb = b.priority ?? 999;
       if (pa !== pb) return pa - pb;
-      const sa = getProviderStats(ka, authType);
-      const sb = getProviderStats(kb, authType);
+      const sa = getProviderStats(ka, getProviderAuthTypes(a, ka));
+      const sb = getProviderStats(kb, getProviderAuthTypes(b, kb));
       const ca = sa.connected > 0 ? 1 : 0;
       const cb = sb.connected > 0 ? 1 : 0;
       if (ca !== cb) return cb - ca;
@@ -290,7 +290,6 @@ export default function ProvidersPage() {
   const oauthEntries = useMemo(() => {
     return sortByPriority(
       Object.entries(OAUTH_PROVIDERS).filter(([, info]) => !info.hidden && matchSearch(info.name)),
-      "oauth",
     );
   }, [matchSearch]);
 
@@ -474,18 +473,23 @@ export default function ProvidersPage() {
           </div>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-          {oauthEntries.map(([key, info]) => (
-            <ProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "oauth")}
-              authType="oauth"
-              circuitBreaker={getCircuitBreakerForProvider(key)}
-              onResetCircuit={resetCircuitBreaker}
-              onToggle={(active) => handleToggleProvider(key, "oauth", active)}
-            />
-          ))}
+          {oauthEntries.map(([key, info]) => {
+            const oauthAuthTypes = getProviderAuthTypes(info, key);
+            return (
+              <ProviderCard
+                key={key}
+                providerId={key}
+                provider={info}
+                stats={getProviderStats(key, oauthAuthTypes)}
+                authType="oauth"
+                circuitBreaker={getCircuitBreakerForProvider(key)}
+                onResetCircuit={resetCircuitBreaker}
+                onToggle={(active) =>
+                  handleToggleProvider(key, oauthAuthTypes, active)
+                }
+              />
+            );
+          })}
         </div>
       </div>
       )}
