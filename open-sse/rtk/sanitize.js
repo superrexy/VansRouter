@@ -22,6 +22,7 @@ import {
   FUNCTION_NAME_MAX_LENGTH,
   FUNCTION_NAME_START_RE,
   SCHEMA_META_KEYWORDS,
+  UNSAFE_PATTERN_RE,
 } from "./sanitizeRules.js";
 
 // ---------------------------------------------------------------------------
@@ -114,6 +115,25 @@ function resolveSchemaRefs(schema, defs, seen = new Set()) {
   return clone;
 }
 
+// Recursively drop `pattern` keywords whose value contains a Unicode property
+// escape (\p{…}). Non-mutating. `pattern` is validation-only, so removal never
+// changes what a tool call can do — it only keeps strict backends from
+// rejecting the whole request (fail-open philosophy).
+function stripUnsafePatterns(node) {
+  if (!node || typeof node !== "object") return node;
+  if (Array.isArray(node)) {
+    for (const item of node) stripUnsafePatterns(item);
+    return node;
+  }
+  if (typeof node.pattern === "string" && UNSAFE_PATTERN_RE.test(node.pattern)) {
+    delete node.pattern;
+  }
+  for (const value of Object.values(node)) {
+    if (value && typeof value === "object") stripUnsafePatterns(value);
+  }
+  return node;
+}
+
 // Clean a JSON-Schema object (non-mutating): resolve $ref, strip meta keywords,
 // ensure a usable object schema. Conservative — never touches property names.
 export function sanitizeToolSchema(schema) {
@@ -129,6 +149,11 @@ export function sanitizeToolSchema(schema) {
   for (const key of SCHEMA_META_KEYWORDS) {
     delete resolved[key];
   }
+
+  // Strip `pattern` values carrying Unicode property escapes (\p{…}) — several
+  // third-party backends reject the whole request with 400 on them (e.g. the
+  // Claude Code Artifact tool's field pattern; anthropics/claude-code#92964).
+  stripUnsafePatterns(resolved);
 
   if (!resolved.type) resolved.type = "object";
   if (resolved.type === "object" && !resolved.properties) {

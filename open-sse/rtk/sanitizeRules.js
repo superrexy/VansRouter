@@ -45,9 +45,28 @@ export const AGENT_SYSTEM_PROMPT_MAX_LENGTH = 2000;
 
 // Rewrite rules for brand/tool names that leak a competing client into the
 // system prompt (kept upstream-safe). Pattern mirrors ANTIGRAVITY_PROMPT_REWRITES.
+// Order matters: most-specific phrases ("Claude Code") must run before the bare
+// word ("Claude"), or the pair is already partially replaced.
 export const SYSTEM_PROMPT_REWRITES = [
+  // OpenCode
   { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Code assistant" : m === "OPENCODE" ? "CODE ASSISTANT" : "code assistant") },
+  // Claude Code (phrase first — bare "Claude" below would fragment it)
+  { from: /claude code/gi, to: (m) => (m === "Claude Code" ? "Code assistant" : m === "CLAUDE CODE" ? "CODE ASSISTANT" : "code assistant") },
+  // Claude Agent SDK identity leak
+  { from: /claude agent sdk/gi, to: (m) => (m === "Claude Agent SDK" ? "the agent SDK" : m === "CLAUDE AGENT SDK" ? "THE AGENT SDK" : "the agent SDK") },
+  // Bare Claude / Anthropic mentions (client identity on third-party upstreams)
+  { from: /\bclaude\b/gi, to: (m) => (m === "Claude" ? "the assistant" : m === "CLAUDE" ? "THE ASSISTANT" : "the assistant") },
+  { from: /\banthropic\b/gi, to: (m) => (m === "Anthropic" ? "the provider" : m === "ANTHROPIC" ? "THE PROVIDER" : "the provider") },
 ];
+
+// JSON-Schema `pattern` strings using Unicode property escapes (\p{…}/\P{…}) are
+// valid ECMA-262 but rejected with HTTP 400 by strict validators on several
+// third-party Anthropic/OpenAI-compatible backends (GLM/Z.AI, DeepSeek — see
+// anthropics/claude-code#92964: the Artifact tool's field pattern ships one).
+// `pattern` is validation-only — it never affects tool execution — so any value
+// containing this construct is stripped. Conservative: plain regex patterns are
+// preserved.
+export const UNSAFE_PATTERN_RE = /\\[pP]\{/;
 
 // Function-name charset sanitization (Gemini style). Mirrors
 // sanitizeFunctionName/sanitizeGeminiFunctionName in executors/translators.
