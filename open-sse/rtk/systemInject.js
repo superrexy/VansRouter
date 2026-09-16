@@ -43,7 +43,10 @@ export function injectSystemPrompt(body, format, prompt) {
 }
 
 function isKiroBody(body) {
-  if (!body || typeof body !== "object" || typeof body.systemPrompt !== "string") return false;
+  if (!body || typeof body !== "object") return false;
   const cs = body.conversationState;
-  return !!cs && typeof cs === "object" && (Array.isArray(cs.history) || !!(cs.currentMessage && typeof cs.currentMessage === "object"));
+  if (!cs || typeof cs !== "object") return false;
+  const historyTurn = Array.isArray(cs.history)
+    && cs.history.some(item => item && (item.userInputMessage || item.assistantResponseMessage));
+  return historyTurn || !!(cs.currentMessage && cs.currentMessage.userInputMessage);
 }

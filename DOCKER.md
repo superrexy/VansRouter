@@ -2,7 +2,7 @@
 
 Run VansRouter in a container. Published images:
 - GHCR: [`ghcr.io/vanszs/vansrouter`](https://github.com/Vanszs/VansRouter/pkgs/container/VansRouter)
-- Docker Hub: [`vanszs/vansrouter`](https://hub.docker.com/r/vanszs/vansrouter)
+- Docker Hub: [`vanszs/vansrouter`](https://hub.docker.com/r/vanszs/vansrouter) (if published separately)
 
 Multi-platform `linux/amd64` + `linux/arm64`.
 
@@ -15,11 +15,14 @@ Multi-platform `linux/amd64` + `linux/arm64`.
 ```bash
 docker run -d \
   -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
+  -v 9router-data:/app/data \
+  -v vansrouter-data:/migration-data:ro \
   -e DATA_DIR=/app/data \
   --name vansrouter \
   ghcr.io/vanszs/vansrouter:latest
 ```
+
+The `vansrouter-data` mount is read-only compatibility input for pre-v0.91.22 named-volume installs. It is copied automatically into the canonical `9router-data` volume only when that volume has no database. If the old install used `$HOME/.9router:/app/data`, keep using that bind mount or migrate its contents into `9router-data` first.
 
 App listens on port `20128`. Open: http://localhost:20128
 
@@ -57,21 +60,17 @@ Container path: `/app/data/db/data.sqlite`
 Production requirements:
 - Run one VansRouter process per SQLite file. Multiple containers/processes with separate local volumes do not share proxy-pool fitness state.
 - If scaling horizontally, provide a shared database/backend for routing state before enabling multiple app instances.
-- Keep the persistent volume name `vansrouter-data`; renaming it creates a new empty database volume.
+- Keep the persistent volume name `9router-data` used by `docker-compose.yml`; renaming it creates a new empty database volume.
 - Production requires a native SQLite driver. The `sql.js` fallback is single-process development fallback only.
 
 ## Optional env vars
 
+Add options to the quick-start command:
+
 ```bash
-docker run -d \
-  -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
-  -e DATA_DIR=/app/data \
-  -e PORT=20128 \
-  -e HOSTNAME=0.0.0.0 \
-  -e DEBUG=true \
-  --name vansrouter \
-  ghcr.io/vanszs/vansrouter:latest
+-e PORT=20128 \
+-e HOSTNAME=0.0.0.0 \
+-e DEBUG=true
 ```
 
 ## Optional Headroom sidecar
@@ -104,7 +103,7 @@ services:
     ports:
       - "20128:20128"
     volumes:
-      - vansrouter-data:/app/data
+      - 9router-data:/app/data
     env_file:
       - .env
     environment:
@@ -124,8 +123,8 @@ services:
       - "8787:8787"
 
 volumes:
-  vansrouter-data:
-    name: vansrouter-data
+  9router-data:
+    name: 9router-data
 ```
 
 ### Option C: Separate Containers
@@ -136,13 +135,16 @@ In the dashboard, open `Endpoint` → `Token Saver` → `Headroom`, confirm the 
 
 If Headroom runs on the Docker host instead of as a sidecar, use `http://host.docker.internal:8787` on macOS/Windows. On Linux, add `--add-host=host.docker.internal:host-gateway` or the equivalent compose `extra_hosts` entry.
 
-## Update to latest
+## Update without manual asset or database steps
+
+`9router-data` is the canonical volume. The compose file also mounts historical `vansrouter-data` read-only for automatic compatibility copying. The entrypoint copies the complete legacy data tree only when `/app/data/db/data.sqlite` does not exist and records `.legacy-volume-migrated`; it never overwrites an existing canonical file. Legacy installs that used a host bind mount (`$HOME/.9router:/app/data`) must keep that bind mount or copy its contents into `9router-data` before switching to named volumes.
 
 ```bash
-docker pull ghcr.io/vanszs/vansrouter:latest
-docker rm -f vansrouter
-# re-run the quick start command
+docker compose pull vansrouter
+docker compose up -d --no-deps vansrouter
 ```
+
+For a pinned release, replace `latest` in the compose file with `X.Y.Z` before pulling. Do not copy `.next`, delete either volume, or run application migrations manually. After a successful upgrade, remove the `vansrouter-data:/migration-data:ro` mount only after confirming the new container reports the expected version and data.
 
 ---
 
@@ -161,16 +163,15 @@ docker run --rm -p 20128:20128 \
 
 ## Publish (automatic via CI)
 
-Push a git tag `v*` → GitHub Actions builds multi-platform (amd64+arm64) and pushes to:
-- `ghcr.io/vanszs/vansrouter:v{version}` + `:latest`
-- `vanszs/vansrouter:v{version}` + `:latest`
+Push an annotated release tag `vX.Y.Z` after the checks in `.agent/cicd.md`. GitHub Actions builds multi-platform (amd64+arm64) and promotes the verified image to:
+- `ghcr.io/vanszs/vansrouter:X.Y.Z` + `:latest`
+
+Docker Hub is not published by the current workflow; treat its listing as a separate/manual distribution only.
 
 ```bash
-# Use scripts/release.js (recommended)
-node scripts/release.js "Release title" "Notes"
-
-# Or manually
-git tag v0.7.x && git push origin v0.7.x
+# Follow .agent/cicd.md; do not tag or publish manually.
+git status --short
+node cli/scripts/validate-release.cjs vX.Y.Z --pretag
 ```
 
 Workflow: `.github/workflows/release.yml`

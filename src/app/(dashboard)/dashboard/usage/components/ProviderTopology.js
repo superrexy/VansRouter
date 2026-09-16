@@ -31,10 +31,6 @@ function getProviderConfig(providerId) {
   return AI_PROVIDERS[providerId] || { color: "#6b7280", name: providerId };
 }
 
-function getProviderImageUrl(providerId) {
-  return getProviderIconSrc(providerId);
-}
-
 // Custom provider node - rectangle with image + name
 function ProviderNode({ data }) {
   const { providerId, label, color, imageUrl, textIcon, active } = data;
@@ -332,7 +328,7 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
       providerId: p.provider,
       label: (config.name !== p.provider ? config.name : null) || p.nodeName || p.name || p.provider,
       color: config.color || "#6b7280",
-      imageUrl: getProviderImageUrl(p.provider),
+      imageUrl: getProviderIconSrc(p.provider),
       textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
       active,
     };

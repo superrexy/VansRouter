@@ -1,7 +1,7 @@
 // Tests for STREAM_EARLY_EOF detection + bounded single retry.
 // When upstream returns HTTP 200 then closes SSE with zero useful frames,
 // VansRoute retries once on the SAME connection before returning 502.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { handleStreamingResponse } from "../../open-sse/handlers/chatCore/streamingHandler.js";
 import { createStreamController } from "../../open-sse/utils/streamHandler.js";
 
@@ -154,6 +154,50 @@ describe("handleStreamingResponse STREAM_EARLY_EOF integration", () => {
     expect(result.success).toBe(true);
     expect(result.response).toBeInstanceOf(Response);
     expect(result.response.body).toBeInstanceOf(ReadableStream);
+  });
+
+  it("keeps the first chunk when readiness times out", async () => {
+    vi.useFakeTimers();
+    try {
+      const chunk = new TextEncoder().encode("data: {\"ok\":true}\n\n");
+      let resolvePendingRead;
+      let reads = 0;
+      const pendingRead = new Promise(resolve => { resolvePendingRead = resolve; });
+      const providerResponse = {
+        status: 200,
+        statusText: "OK",
+        headers: new Headers({ "content-type": "text/event-stream" }),
+        body: {
+          getReader: () => ({
+            read: () => reads++ === 0
+              ? pendingRead.then(() => ({ value: chunk, done: false }))
+              : Promise.resolve({ done: true }),
+            cancel: () => Promise.resolve(),
+            releaseLock: () => {}
+          })
+        }
+      };
+
+      const resultPromise = handleStreamingResponse({
+        ...baseCtx,
+        provider: "openai",
+        model: "gpt-4o",
+        sourceFormat: "openai",
+        targetFormat: "openai",
+        providerResponse,
+        streamController: makeController()
+      });
+      await vi.advanceTimersByTimeAsync(25000);
+      const result = await resultPromise;
+      expect(result.success).toBe(true);
+
+      resolvePendingRead();
+      const { value, done } = await result.response.body.getReader().read();
+      expect(done).toBe(false);
+      expect(new TextDecoder().decode(value)).toContain("ok");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("returns STREAM_EARLY_EOF when upstream body is null", async () => {

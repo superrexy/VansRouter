@@ -11,20 +11,33 @@ import { translateRequest } from "../../open-sse/translator/index.js";
 import { OpenCodeGoExecutor } from "../../open-sse/executors/opencode-go.js";
 import "../translator/registerAll.js";
 
+const CLI_PROVIDERS_SOURCE = await import("fs").then(({ readFileSync }) =>
+  readFileSync(new URL("../../cli/src/cli/menus/providers.js", import.meta.url), "utf8")
+);
+
 // Chat-only models (no /messages, no /responses support on opencode-go)
 const CHAT_ONLY = [
+  "glm-5.3-flash",
+  "glm-5.3",
   "glm-5.2",
   "glm-5.1",
   "kimi-k2.7-code",
   "kimi-k2.6",
+  "kimi-k3",
+  "deepseek-flash",
+  "longcat-2.0",
   "mimo-v2.5",
   "mimo-v2.5-pro",
+  "hy4-preview",
+  "hy3",
 ];
 // Models that also expose the Anthropic /messages endpoint
 const CLAUDE_CAPABLE = [
   "minimax-m3",
   "minimax-m2.7",
   "minimax-m2.5",
+  "qwen3.8-max",
+  "qwen3.8-flash",
   "qwen3.7-max",
   "qwen3.7-plus",
   "qwen3.6-plus",
@@ -43,29 +56,42 @@ function pickTransport(provider, sourceFormat, alias, model) {
 }
 
 describe("OpenCode Go model catalog", () => {
+  it("is exposed by the CLI provider setup", () => {
+    expect(CLI_PROVIDERS_SOURCE).toContain('"opencode-go": { id: "opencode-go", name: "OpenCode Go" }');
+    expect(CLI_PROVIDERS_SOURCE).toContain('"opencode-go": [');
+  });
+
   it("matches the documented model IDs", () => {
     const ids = (PROVIDER_MODELS["opencode-go"] || []).map((m) => m.id);
     expect(ids).toEqual([
+      "deepseek-flash",
       "glm-5.3-flash",
+      "glm-5.3",
       "glm-5.2",
       "glm-5.1",
       "gpt-5.6-luna",
       "grok-4.6",
       "kimi-k2.7-code",
       "kimi-k2.6",
+      "kimi-k3",
       "deepseek-v4-pro",
       "deepseek-v4-flash",
       "deepseek-v4-flash-vision-exp",
+      "longcat-2.0",
       "mimo-v2.5",
       "mimo-v2.5-pro",
       "minimax-m3",
       "minimax-m2.7",
       "minimax-m2.5",
-      "muse-spark-1.2-contributor",
-      "muse-spark-1.3-contributor",
+      "qwen3.8-max",
+      "qwen3.8-flash",
       "qwen3.7-max",
       "qwen3.7-plus",
       "qwen3.6-plus",
+      "hy4-preview",
+      "hy3",
+      "muse-spark-1.2-contributor",
+      "muse-spark-1.3-contributor",
     ]);
   });
 });
@@ -269,5 +295,92 @@ describe("OpenCode Go Muse Spark (responses-only model)", () => {
     expect(executor.buildUrl("muse-spark-1.2-contributor")).toBe(
       "https://opencode.ai/zen/go/v1/responses",
     );
+  });
+});
+
+describe("OpenCode Go executor runtime transports", () => {
+  const executor = new OpenCodeGoExecutor();
+  const credentials = { apiKey: "sk-go-test" };
+
+  it("uses the Claude transport for Qwen URL and auth", () => {
+    const runtimeTransport = resolveTransport("opencode-go", "claude");
+    expect(executor.buildUrl("qwen3.7-max", true, 0, { ...credentials, runtimeTransport })).toBe(
+      "https://opencode.ai/zen/go/v1/messages",
+    );
+    expect(executor.buildHeaders({ ...credentials, runtimeTransport }, true)).toMatchObject({
+      "x-api-key": "sk-go-test",
+      "anthropic-version": expect.any(String),
+      Accept: "text/event-stream",
+    });
+  });
+
+  it("uses the Claude transport for DeepSeek instead of model sets", () => {
+    const runtimeTransport = resolveTransport("opencode-go", "claude");
+    expect(executor.buildUrl("deepseek-v4-flash", true, 0, { ...credentials, runtimeTransport })).toBe(
+      "https://opencode.ai/zen/go/v1/messages",
+    );
+    expect(executor.buildHeaders({ ...credentials, runtimeTransport }, true)).toMatchObject({
+      "x-api-key": "sk-go-test",
+    });
+    expect(executor.buildHeaders({ ...credentials, runtimeTransport }, true)).not.toHaveProperty(
+      "Authorization",
+    );
+  });
+
+  it("uses the Responses transport and normalizes DeepSeek requests", () => {
+    const runtimeTransport = resolveTransport("opencode-go", "openai-responses");
+    const body = {
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 123,
+      reasoning_effort: "high",
+    };
+    expect(executor.buildUrl("deepseek-v4-flash", true, 0, { ...credentials, runtimeTransport })).toBe(
+      "https://opencode.ai/zen/go/v1/responses",
+    );
+    expect(executor.transformRequest("deepseek-v4-flash", body, true, {
+      ...credentials,
+      runtimeTransport,
+    })).toMatchObject({
+      max_output_tokens: 123,
+      reasoning: { effort: "high", summary: "auto" },
+    });
+    expect(body.max_tokens).toBeUndefined();
+  });
+
+  it("keeps legacy Muse fallback when runtime transport is absent", () => {
+    const body = { input: "hi", max_tokens: 123, reasoning_effort: "high" };
+    expect(executor.buildUrl("muse-spark-1.2-contributor")).toBe(
+      "https://opencode.ai/zen/go/v1/responses",
+    );
+    expect(executor.buildHeaders({ apiKey: "sk-go-test" }, true)).toMatchObject({
+      Authorization: "Bearer sk-go-test",
+    });
+    expect(executor.transformRequest("muse-spark-1.2-contributor", body, true, {})).toMatchObject({
+      max_output_tokens: 123,
+      reasoning: { effort: "high", summary: "auto" },
+    });
+  });
+
+  it("normalizes legacy model suffixes before selecting URL and auth", () => {
+    const credentials = { apiKey: "sk-go-test" };
+    expect(executor.buildUrl("minimax-m3(high)", true, 0, credentials)).toBe(
+      "https://opencode.ai/zen/go/v1/messages",
+    );
+    expect(executor.buildHeaders(credentials, true, "minimax-m3(high)")).toMatchObject({
+      "x-api-key": "sk-go-test",
+      "anthropic-version": expect.any(String),
+    });
+    expect(executor.buildHeaders(credentials, true, "minimax-m3(high)")).not.toHaveProperty(
+      "Authorization",
+    );
+  });
+
+  it("adds a stable per-connection session header", () => {
+    const credentials = { apiKey: "sk-go-test", connectionId: "connection-1" };
+    const first = executor.buildHeaders(credentials, true);
+    const second = executor.buildHeaders(credentials, true);
+
+    expect(first["x-opencode-session"]).toBe(second["x-opencode-session"]);
+    expect(first["x-opencode-session"]).toMatch(/^[-a-f0-9]+$/);
   });
 });

@@ -63,34 +63,30 @@ export function detectFormat(body) {
   if (body.messages && Array.isArray(body.messages)) {
     const firstMsg = body.messages[0];
     
-    // If content is array, check if it follows Claude structure
-    if (firstMsg?.content && Array.isArray(firstMsg.content)) {
-      const firstContent = firstMsg.content[0];
-      
-      // Claude format has specific types: text, image, tool_use, tool_result
-      // OpenAI multimodal has: text, image_url (note the difference)
-      if (firstContent?.type === "text" && !body.model?.includes("/")) {
-        // Could be Claude or OpenAI multimodal
-        // Check for Claude-specific fields
-        if (body.system || body.anthropic_version) {
-          return "claude";
-        }
-        // Check if image format is Claude (source.type) vs OpenAI (image_url.url)
-        const hasClaudeImage = firstMsg.content.some(c => 
-          c.type === "image" && c.source?.type === "base64"
-        );
-        const hasOpenAIImage = firstMsg.content.some(c => 
-          c.type === "image_url" && c.image_url?.url
-        );
-        if (hasClaudeImage) return "claude";
-        if (hasOpenAIImage) return "openai";
-        
-        // If still unclear, check for tool format
-        const hasClaudeTool = firstMsg.content.some(c => 
-          c.type === "tool_use" || c.type === "tool_result"
-        );
-        if (hasClaudeTool) return "claude";
+    // If content is array, check every block because multimodal requests may start
+    // with an image rather than text.
+    if (firstMsg?.content && Array.isArray(firstMsg.content) && !body.model?.includes("/")) {
+      const contentBlocks = body.messages.flatMap((message) =>
+        Array.isArray(message?.content) ? message.content : []
+      );
+
+      if (body.system || body.anthropic_version) {
+        return "claude";
       }
+
+      const hasClaudeImage = contentBlocks.some((content) =>
+        content.type === "image" && content.source?.type === "base64"
+      );
+      const hasOpenAIImage = contentBlocks.some((content) =>
+        content.type === "image_url" && content.image_url?.url
+      );
+      if (hasClaudeImage) return "claude";
+      if (hasOpenAIImage) return "openai";
+
+      const hasClaudeTool = contentBlocks.some((content) =>
+        content.type === "tool_use" || content.type === "tool_result"
+      );
+      if (hasClaudeTool) return "claude";
     }
     
     // If content is string, it's likely OpenAI (Claude also supports this)

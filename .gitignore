@@ -10,6 +10,7 @@
 !.yarn/releases
 !.yarn/versions
 package-lock.json
+!cli/package-lock.json
 
 # =============================================================================
 # Build output
@@ -91,6 +92,7 @@ test/*
 open-sse/test/*
 open-sse.old/
 ecosystem.config.*
+!ecosystem.config.cjs
 deploy*.sh
 scripts/agSniffer/*
 gitbooks/*

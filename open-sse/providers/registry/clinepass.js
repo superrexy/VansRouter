@@ -21,6 +21,7 @@ export default {
       "HTTP-Referer": "https://cline.bot",
       "X-Title": "Cline",
     },
+    quirks: { clineEnvelope: true },
     auth: {
       combined: true,
       header: "Authorization",

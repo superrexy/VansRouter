@@ -241,75 +241,25 @@ export function injectGeminiSystem(body, prompt) {
 
 export function injectKiroSystem(body, prompt) {
   try {
-    let oldPrompt = typeof body.systemPrompt === "string" ? body.systemPrompt : "";
     const conversationState = body.conversationState;
-    let firstUser = conversationState && Array.isArray(conversationState.history)
-      ? (conversationState.history.find(item => item && item.userInputMessage)?.userInputMessage ?? null)
-      : null;
-    if (!firstUser && conversationState?.currentMessage?.userInputMessage) {
-      firstUser = conversationState.currentMessage.userInputMessage;
-    }
-
-    if (
-      firstUser &&
-      typeof firstUser.content === "string" &&
-      oldPrompt &&
-      !hasPrompt(oldPrompt, prompt)
-    ) {
-      const content = firstUser.content;
-      if (content === oldPrompt || (content.startsWith(oldPrompt) && !content.startsWith(`${oldPrompt}${SEP}`))) {
-        oldPrompt = "";
-      }
-    }
-    if (oldPrompt && hasPrompt(oldPrompt, prompt)) return;
-
-    const next = oldPrompt ? `${oldPrompt}${SEP}${prompt}` : prompt;
     let target = null;
-    try {
-      const history = Array.isArray(conversationState?.history) ? conversationState.history : null;
-      if (history) {
-        for (const item of history) {
-          if (item?.userInputMessage) {
-            target = item.userInputMessage;
-            break;
-          }
+    const history = Array.isArray(conversationState?.history) ? conversationState.history : null;
+    if (history) {
+      for (const item of history) {
+        if (item?.userInputMessage) {
+          target = item.userInputMessage;
+          break;
         }
-      }
-      if (!target && conversationState?.currentMessage?.userInputMessage) {
-        target = conversationState.currentMessage.userInputMessage;
-      }
-    } catch (_) {}
-
-    let systemPromptWritten = false;
-    try {
-      body.systemPrompt = next;
-      systemPromptWritten = true;
-    } catch (_) {}
-
-    try {
-      if (target) {
-        const content = typeof target.content === "string" ? target.content : "";
-        if (oldPrompt === "") {
-          if (!content.startsWith(prompt) && !content.startsWith(next)) {
-            try { target.content = content ? `${next}${SEP}${content}` : next; } catch (_) {}
-          }
-        } else if (content.startsWith(oldPrompt) && !content.startsWith(next)) {
-          try { target.content = `${next}${content.slice(oldPrompt.length)}`; } catch (_) {}
-        }
-      }
-    } catch (_) {}
-
-    if (systemPromptWritten && target) {
-      let converged = false;
-      try {
-        const content = target.content;
-        converged = typeof content !== "string"
-          || content.startsWith(next)
-          || !content.startsWith(oldPrompt);
-      } catch (_) {}
-      if (!converged) {
-        try { body.systemPrompt = oldPrompt; } catch (_) {}
       }
     }
+    if (!target && conversationState?.currentMessage?.userInputMessage) {
+      target = conversationState.currentMessage.userInputMessage;
+    }
+    if (!target) return;
+
+    const content = typeof target.content === "string" ? target.content : "";
+    const next = dedupStringAppend(content, prompt);
+    if (next === content) return;
+    try { target.content = next; } catch (_) {}
   } catch (_) {}
 }

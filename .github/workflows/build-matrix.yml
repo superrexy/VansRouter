@@ -3,8 +3,40 @@ name: Cross-platform build matrix
 on:
   push:
     branches: [main, master, dev]
+    paths:
+      - "cli/**"
+      - "scripts/build.js"
+      - "scripts/fix-standalone-symlinks.cjs"
+      - "src/lib/dataDir.js"
+      - "src/lib/db/**"
+      - "src/mitm/**"
+      - "server.js"
+      - "custom-server.js"
+      - "next.config.mjs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "Dockerfile"
+      - ".gitattributes"
+      - ".github/workflows/**"
   pull_request:
     branches: [main, master, dev]
+    paths:
+      - "cli/**"
+      - "scripts/build.js"
+      - "scripts/fix-standalone-symlinks.cjs"
+      - "src/lib/dataDir.js"
+      - "src/lib/db/**"
+      - "src/mitm/**"
+      - "server.js"
+      - "custom-server.js"
+      - "next.config.mjs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "Dockerfile"
+      - ".gitattributes"
+      - ".github/workflows/**"
   workflow_dispatch:
 
 concurrency:
@@ -42,6 +74,19 @@ jobs:
           node-version: ${{ matrix.node }}
         # Note: setup-node's pnpm cache requires a workspace "packages" field,
         # which this repo does not use. pnpm/action-setup handles installation.
+
+      - name: Resolve pnpm store
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-node-${{ matrix.node }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ matrix.node }}-pnpm-
 
       - name: Configure pnpm hoisting config
         shell: bash

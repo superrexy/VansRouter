@@ -18,6 +18,41 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 const { fixStandaloneSymlinks } = require("./fix-standalone-symlinks.cjs");
 
+function backupSqliteFile(dbFile, dest) {
+  const script = [
+    `const dbFile = ${JSON.stringify(dbFile)};`,
+    `const dest = ${JSON.stringify(dest)};`,
+    "const sqlString = (value) => `'${value.replace(/'/g, \"''\")}'`;",
+    "const close = (db) => { try { db?.close(); } catch {} };",
+    "(async () => {",
+    "  let betterSqliteError;",
+    "  try {",
+    "    const Database = require('better-sqlite3');",
+    "    const db = new Database(dbFile, { readonly: true, fileMustExist: true });",
+    "    try { await db.backup(dest); } finally { close(db); }",
+    "    return;",
+    "  } catch (error) {",
+    "    betterSqliteError = error;",
+    "  }",
+    "  try {",
+    "    const { DatabaseSync } = require('node:sqlite');",
+    "    const db = new DatabaseSync(dbFile, { readOnly: true });",
+    "    try { db.exec(`VACUUM INTO ${sqlString(dest)}`); } finally { close(db); }",
+    "  } catch (nodeSqliteError) {",
+    "    console.error(nodeSqliteError.stack || nodeSqliteError);",
+    "    console.error(`better-sqlite3 fallback failed: ${betterSqliteError.message}`);",
+    "    process.exitCode = 1;",
+    "  }",
+    "})();",
+  ].join("\n");
+  try {
+    execFileSync(process.execPath, ["-e", script], { stdio: "inherit", cwd: appDir });
+  } catch (error) {
+    if (error?.status === 1) throw new Error("better-sqlite3 backup failed", { cause: error });
+    throw error;
+  }
+}
+
 const appDir = path.resolve(__dirname, "..");
 const fakeHome = path.join(appDir, ".fakehome");
 
@@ -50,14 +85,17 @@ function backupProductionDb() {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const dest = path.join(backupsDir, `pre-build-${stamp}.sqlite`);
   try {
-    fs.copyFileSync(dbFile, dest);
+    backupSqliteFile(dbFile, dest);
+    for (const name of fs.readdirSync(backupsDir)) {
+      if (name.startsWith("pre-build-") && name.endsWith(".sqlite") && name !== path.basename(dest)) {
+        fs.unlinkSync(path.join(backupsDir, name));
+      }
+    }
     console.log(`▶ DB safety backup: ${dest}`);
   } catch (e) {
-    console.warn(`⚠️  DB backup failed (non-fatal): ${e.message}`);
+    throw new Error(`DB backup failed; refusing to continue build: ${e.message}`, { cause: e });
   }
 }
-backupProductionDb();
-
 // Run focused no-undef lint before building so "X is not defined" runtime
 // crashes are caught early (e.g., GitHub Issue #1, OpenCode CLI setup).
 console.log("▶ running no-undef lint");
@@ -86,6 +124,8 @@ const env = {
 // .cmd/shell quoting differences across platforms).
 const nextBin = require.resolve("next/dist/bin/next");
 
+backupProductionDb();
+
 console.log(`▶ next build --webpack  (HOME=${fakeHome})`);
 // execFileSync throws on a non-zero exit, which propagates build failure correctly.
 execFileSync(process.execPath, [nextBin, "build", "--webpack"], {
@@ -101,7 +141,7 @@ console.log(`▶ copying public/ + ${distDir}/static into ${distDir}/standalone`
 fs.cpSync(path.join(appDir, "public"), path.join(appDir, distDir, "standalone", "public"), { recursive: true });
 fs.cpSync(path.join(appDir, distDir, "static"), path.join(appDir, distDir, "standalone", distDir, "static"), { recursive: true });
 
-fixStandaloneSymlinks(path.resolve(__dirname, "..", ".next", "standalone"));
+fixStandaloneSymlinks(path.resolve(appDir, distDir, "standalone"));
 
 // ─── Fix standalone instrumentation import ───────────────────────────────────
 // kimchiQuotaReactivation.js uses `import(/* webpackIgnore: true */ "../../lib/localDb.js")`

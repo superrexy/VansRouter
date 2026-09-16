@@ -115,7 +115,7 @@ async function text(stream) {
 async function execute(executor = new KiroExecutor(), overrides = {}) {
   return executor.execute({
     model: "kr/claude-opus-4.8",
-    body: { systemPrompt: "base", conversationState: {} },
+    body: { systemPrompt: "base", conversationState: { currentMessage: { userInputMessage: { content: "base", modelId: "m" } } } },
     stream: true,
     credentials,
     ...overrides

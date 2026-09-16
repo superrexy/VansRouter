@@ -9,10 +9,65 @@ import { PROVIDERS } from "../../providers/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
 
+function normalizeMessageContent(msg) {
+  const content = msg?.content;
+  if (content && typeof content === "object" && !Array.isArray(content)) {
+    delete content.cache_control;
+    msg.content = [content];
+  }
+  return msg;
+}
+
+function lastCacheableToolIndex(tools) {
+  if (!Array.isArray(tools)) return -1;
+  for (let i = tools.length - 1; i >= 0; i--) {
+    if (tools[i]?.defer_loading !== true) return i;
+  }
+  return -1;
+}
+
+function countCacheControlBlocks(body) {
+  let count = 0;
+  for (const block of body?.system || []) if (block?.cache_control) count++;
+  for (const tool of body?.tools || []) if (tool?.cache_control) count++;
+  for (const message of body?.messages || []) {
+    for (const block of message.content || []) if (block?.cache_control) count++;
+  }
+  return count;
+}
+
+function capCacheControlBlocks(body) {
+  const marked = [];
+  const heads = new Set();
+  const system = Array.isArray(body.system) ? body.system : [];
+  const tools = Array.isArray(body.tools) ? body.tools : [];
+  if (system.length) heads.add(system.at(-1));
+  const lastTool = lastCacheableToolIndex(tools);
+  if (lastTool >= 0) heads.add(tools[lastTool]);
+  for (const block of system) if (block?.cache_control) marked.push(block);
+  for (const tool of tools) if (tool?.cache_control) marked.push(tool);
+  for (const message of body.messages || []) {
+    for (const block of message.content || []) if (block?.cache_control) marked.push(block);
+  }
+  const head = marked.filter((block) => heads.has(block));
+  const rest = marked.filter((block) => !heads.has(block));
+  const keep = new Set([...head, ...rest.slice(-(4 - head.length))]);
+  for (const block of marked) {
+    if (!keep.has(block)) delete block.cache_control;
+  }
+}
+
 export function anchorClaudeCache(body) {
   if (!body || typeof body !== "object") return body;
+  for (const msg of body.messages || []) normalizeMessageContent(msg);
+  for (const tool of body.tools || []) if (tool?.defer_loading === true) delete tool.cache_control;
   if (Array.isArray(body.system) && body.system.length) body.system.at(-1).cache_control = { type: "ephemeral", ttl: "1h" };
-  if (Array.isArray(body.tools) && body.tools.length) body.tools.at(-1).cache_control = { type: "ephemeral", ttl: "1h" };
+  const lastTool = lastCacheableToolIndex(body.tools);
+  if (lastTool >= 0) body.tools[lastTool].cache_control = { type: "ephemeral", ttl: "1h" };
+  if (countCacheControlBlocks(body) >= 4) {
+    capCacheControlBlocks(body);
+    return body;
+  }
   if (Array.isArray(body.messages)) {
     for (const message of body.messages) for (const block of message.content || []) delete block.cache_control;
     const target = [...body.messages].reverse().find((m) => m.role === ROLE.ASSISTANT && Array.isArray(m.content)) || [...body.messages].reverse().find((m) => Array.isArray(m.content));
@@ -25,8 +80,9 @@ export function anchorClaudeCache(body) {
 // Check if message has valid non-empty content
 export function hasValidContent(msg) {
   if (typeof msg.content === "string" && msg.content.trim()) return true;
-  if (Array.isArray(msg.content)) {
-    return msg.content.some(block =>
+  const content = msg.content && typeof msg.content === "object" && !Array.isArray(msg.content) ? [msg.content] : msg.content;
+  if (Array.isArray(content)) {
+    return content.some(block =>
       (block.type === CLAUDE_BLOCK.TEXT && block.text?.trim()) ||
       block.type === CLAUDE_BLOCK.TOOL_USE ||
       block.type === CLAUDE_BLOCK.TOOL_RESULT ||
@@ -135,6 +191,11 @@ export function normalizeClaudePassthrough(body, model = "") {
   if (ADAPTIVE_THINKING_UNSUPPORTED.test(model) && body.output_config?.effort != null) {
     delete body.output_config.effort;
     if (Object.keys(body.output_config).length === 0) delete body.output_config;
+  }
+
+  // 3. Normalize single content blocks before system-message processing.
+  if (Array.isArray(body.messages)) {
+    for (const msg of body.messages) normalizeMessageContent(msg);
   }
 
   // 2. Hoist mid-conversation system messages into the top-level system field
@@ -248,7 +309,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
 
     // Pass 1: remove cache_control + filter empty messages
     for (let i = 0; i < len; i++) {
-      const msg = body.messages[i];
+      const msg = normalizeMessageContent(body.messages[i]);
 
       // Remove cache_control from content blocks
       if (Array.isArray(msg.content)) {
@@ -342,8 +403,14 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     // Strip built-in tools (e.g. web_search_20250305) and normalize to Anthropic-native shape
     // (drop `type` field, fold `function.{name,description,parameters}`) for non-Anthropic providers
     if (provider !== "claude") {
+      const supportedTypes = PROVIDERS[provider]?.quirks?.claudeSupportedToolTypes;
+      const hasWhitelist = Array.isArray(supportedTypes);
       body.tools = body.tools
-        .filter(tool => !tool.type || tool.type === "function")
+        .filter(tool => {
+          const type = tool?.type;
+          if (!type || type === "function") return true;
+          return hasWhitelist ? supportedTypes.includes(type) : false;
+        })
         .map(tool => {
           if (tool.function) {
             return {
@@ -352,6 +419,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
               input_schema: tool.function.parameters,
             };
           }
+          if (hasWhitelist) return tool;
           const { type, ...rest } = tool;
           return rest;
         });

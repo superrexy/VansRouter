@@ -648,13 +648,13 @@ export const PROVIDER_CAPABILITIES = {
       contextWindow: 1000000,
       maxOutput: 50000,
     },
-    "deepseek-v4-flash": {
+    "deepseek-v4.1-flash": {
       vision: true,
       reasoning: true,
       thinkingFormat: "openai",
       thinkingCanDisable: false,
       contextWindow: 1000000,
-      maxOutput: 50000,
+      maxOutput: 128000,
     },
     "deepseek-v3-2-volc": {
       reasoning: true,

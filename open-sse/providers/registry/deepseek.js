@@ -25,6 +25,9 @@ export default {
     reasoningInject: {
       scope: "all",
     },
+    quirks: {
+      claudeSupportedToolTypes: ["web_search_20250305", "web_search_20260209"],
+    },
   },
   // Multi-endpoint: pick the transport matching client sourceFormat to skip translation.
   transports: [

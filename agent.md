@@ -5,45 +5,40 @@ File ini berisi panduan benar untuk mem-build dan menjalankan aplikasi Next.js `
 ## 1. Konfigurasi Environment
 Pastikan file `.env` sudah diatur dengan benar dan pastikan `PORT` telah disesuaikan (contoh `PORT=3003`) agar sesuai dengan proxy (seperti Nginx atau Cloudflare).
 
-## 2. Build Aplikasi
-Aplikasi ini menggunakan output mode `standalone` dari Next.js untuk optimasi ukuran deployment.
-Gunakan perintah berikut untuk melakukan build:
+## 2. Atomic Build dan Deployment
+Aplikasi menggunakan output mode `standalone`. Jangan menyalin atau menghapus `.next/standalone` saat PM2 masih melayani traffic: HTML dari release lama dapat meminta hashed chunk yang sedang hilang.
+
+Gunakan deployment atomik dari root proyek:
 ```bash
-pnpm run build
+PORT=3003 node scripts/deploy-atomic.cjs
 ```
 
-## 3. Menyalin Static Assets (Penting!)
-Dalam mode `standalone`, Next.js tidak secara otomatis memindahkan aset statis untuk mode produksi, yang dapat mengakibatkan gambar (icons) atau file CSS hilang dari antarmuka web.
-Setelah proses build selesai, jalankan perintah ini dari root folder proyek:
+Script membangun release terisolasi, memverifikasi `server.js` dan static chunks, menjalankan smoke check pada port sementara dengan `DATA_DIR` sementara, lalu mengganti symlink `/var/lib/9router/current` secara atomik. PM2 tetap menunjuk ke launcher persisten `server.js` melalui `ecosystem.config.cjs` dan `RELEASE_SERVER`; PM2 tidak boleh menunjuk langsung ke release di `/tmp`.
+
+## 3. Rollback
+Release sebelumnya tetap disimpan agar rollback tidak perlu rebuild:
 ```bash
-cp -r public .next/standalone/public
-cp -r .next/static .next/standalone/.next/static
+node scripts/deploy-atomic.cjs rollback
 ```
+Jika `RELEASE_ROOT` atau `CURRENT_LINK` dikonfigurasi, gunakan nilai yang sama untuk deploy dan rollback. Nama volume Docker `9router-data` dan `DATA_DIR` production tidak boleh diubah.
 
-## 4. Menjalankan dengan PM2
-Jalankan file `server.js` menggunakan PM2. File ini adalah wrapper yang default ke port `3003` jika `PORT` tidak di-set. Docker memakai default `20128`; selalu definisikan `PORT` saat menjalankan PM2 agar sesuai dengan upstream proxy Nginx (contoh port 3003):
+## 4. Persistensi PM2
 
-```bash
-# Menjalankan instance baru (ganti 3003 sesuai konfigurasi upstream Nginx)
-PORT=3003 pm2 start server.js --name 9router
-
-# Jika aplikasi sudah pernah berjalan sebelumnya, pastikan restart selalu membawa argumen --update-env
-PORT=3003 pm2 restart 9router --update-env
-```
-
-## 5. Simpan Status PM2
-Agar aplikasi akan secara otomatis kembali berjalan sewaktu server direstart, simpan state PM2 saat ini:
+Agar aplikasi kembali berjalan sewaktu server direstart, simpan state PM2 hanya setelah health/version check deployment berhasil:
 ```bash
 pm2 save
 ```
+Jangan menjalankan `pm2 save` saat eksperimen gagal atau saat `9router` tidak online; PM2 menyimpan daftar proses saat itu.
 
-## Troubleshooting 
+## Troubleshooting
 
-- **502 Bad Gateway:** 
+- **502 Bad Gateway:**
   Masalah 502 dari Cloudflare/Nginx biasanya dikarenakan `9router` berjalan di port default Next.js (3000) sedangkan Nginx mengarah ke port 3003. Selalu periksa `PORT` environment pada PM2 (`pm2 env 9router | grep PORT`).
-  
-- **Ikon Ai atau StyleSheet tidak termuat di Dashboard:**
-  Berarti Anda melewati **Langkah 3** di atas. Pastikan folder `public` dan `.next/static` telah disalin kedalam `.next/standalone/` setelah build baru sebelum me-restart pm2.
+
+- **Loading chunk failed:**
+  Jangan menghapus atau menyalin ulang `.next/standalone` saat PM2 masih aktif. Gunakan `node scripts/deploy-atomic.cjs` agar release baru disiapkan terpisah dan symlink diganti secara atomik.
+- **Ikon atau StyleSheet tidak termuat di Dashboard:**
+  Verifikasi release aktif (`readlink -f /var/lib/9router/current`) memiliki `public/` dan `.next/static/`.
 
 ---
 

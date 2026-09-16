@@ -111,6 +111,15 @@ const PROVIDER_MODELS = {
     { id: "gemini-2.5-flash" },
     { id: "gemini-2.5-flash-lite" },
   ],
+  "opencode-go": [
+    { id: "minimax-m3" },
+    { id: "kimi-k3" },
+    { id: "kimi-k2.7-code" },
+    { id: "glm-5.3" },
+    { id: "deepseek-v4-pro" },
+    { id: "deepseek-v4-flash" },
+    { id: "qwen3.8-max" },
+  ],
   openrouter: [
     { id: "auto" },
   ],
@@ -146,6 +155,7 @@ const APIKEY_PROVIDERS = {
   openai: { id: "openai", name: "OpenAI" },
   anthropic: { id: "anthropic", name: "Anthropic" },
   gemini: { id: "gemini", name: "Gemini" },
+  "opencode-go": { id: "opencode-go", name: "OpenCode Go" },
 };
 
 const ALL_PROVIDERS = { ...OAUTH_PROVIDERS, ...APIKEY_PROVIDERS };

@@ -446,7 +446,7 @@ export default function APIPageClient() {
   };
 
   // ── ACL Edit Key handlers ──────────────────────────────────────────
-  const ALL_KINDS = ["llm", "embedding", "image", "tts", "stt", "webSearch", "webFetch"];
+  const ALL_KINDS = ["llm", "embedding", "image", "video", "tts", "stt", "webSearch", "webFetch"];
 
   // Provider list for the ACL dialog is built by src/shared/utils/aclProviderList.js
   // (connections + nodes + registered noAuth/free providers). Auth-requiring

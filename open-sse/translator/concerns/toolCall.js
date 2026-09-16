@@ -1,4 +1,5 @@
 // Tool call helper functions for translator
+import { FORMATS } from "../formats.js";
 
 // Anthropic tool_use.id must match: ^[a-zA-Z0-9_-]+$
 const TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -260,5 +261,11 @@ export function fixMissingToolResponses(body) {
 export function defaultClaudeToolType(tools) {
   if (!Array.isArray(tools)) return tools;
   return tools.map(tool => tool?.type ? tool : { ...tool, type: "custom" });
+}
+
+export function shouldDefaultClaudeToolType(provider, finalFormat, tools, PROVIDERS) {
+  return finalFormat === FORMATS.CLAUDE
+    && Array.isArray(tools)
+    && PROVIDERS?.[provider]?.quirks?.requireClaudeToolType === true;
 }
 

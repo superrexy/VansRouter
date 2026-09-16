@@ -327,7 +327,20 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // instead of immediately returning 503. Bounded to 1 retry per request.
   let cooldownRetries = 0;
 
+  // Bounded fallback attempts: prevent 100+ account cascade from exceeding Cloudflare 100s edge timeout.
+  // ponytail: max 6 fallback attempts per request; return 429/503 early if accounts exhausted.
+  const MAX_FALLBACK_ATTEMPTS = Math.max(providerAccountCount > 0 ? Math.min(providerAccountCount, 6) : 6, 1);
+  let fallbackAttempts = 0;
+
   while (true) {
+    if (fallbackAttempts >= MAX_FALLBACK_ATTEMPTS) {
+      log.warn("CHAT", `[${provider}/${model}] fallback attempt limit reached (${MAX_FALLBACK_ATTEMPTS}) — aborting to prevent gateway timeout`);
+      return withSelectedConnectionHeader(
+        errorResponse(lastStatus || HTTP_STATUS.RATE_LIMITED, lastError || `Rate limit reached across ${MAX_FALLBACK_ATTEMPTS} accounts`),
+        lastExcludedConnectionId
+      );
+    }
+    fallbackAttempts++;
     // Abort check: stop trying accounts if the client already disconnected.
     // Prevents wasted upstream calls and circuit-breaker probe hits on a dead
     // connection.

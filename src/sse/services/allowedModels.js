@@ -29,10 +29,11 @@ import { guardedFetch } from "@/shared/utils/ssrfGuard.js";
 
 const UPSTREAM_CONNECTION_RE = /[-_][0-9a-f]{8,}$/i;
 const LLM_KIND = "llm";
-const ALL_KINDS = [LLM_KIND, "tts", "embedding", "image", "imageToText", "stt", "webSearch", "webFetch"];
+const ALL_KINDS = [LLM_KIND, "tts", "embedding", "image", "imageToText", "stt", "video", "webSearch", "webFetch"];
 
 const MODEL_TYPE_TO_KIND = {
   image: "image",
+  video: "video",
   tts: "tts",
   embedding: "embedding",
   stt: "stt",
@@ -183,6 +184,7 @@ export function isConfiguredMediaModel(alias, modelId) {
   if (modelId === "stt" && (provider.sttConfig || provider.serviceKinds?.includes("stt"))) return true;
   if (modelId === "tts" && (provider.ttsConfig || provider.serviceKinds?.includes("tts"))) return true;
   if (modelId === "image" && (provider.imageConfig || provider.serviceKinds?.includes("image"))) return true;
+  if (modelId === "video" && (provider.videoConfig || provider.serviceKinds?.includes("video"))) return true;
   if (provider.ttsConfig?.models?.some((m) => m.id === modelId)) return true;
   if (provider.sttConfig?.models?.some((m) => m.id === modelId)) return true;
   if (provider.imageConfig?.models?.some((m) => m.id === modelId)) return true;

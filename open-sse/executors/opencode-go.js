@@ -6,11 +6,13 @@ import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 import crypto from "node:crypto";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
-// Models that use /zen/go/v1/messages (Anthropic/Claude format + x-api-key auth)
+// Legacy model routing remains for callers that do not provide runtimeTransport.
 const MESSAGES_FORMAT_MODELS = new Set([
   "minimax-m3",
   "minimax-m2.7",
   "minimax-m2.5",
+  "qwen3.8-max",
+  "qwen3.8-flash",
   "qwen3.7-max",
   "qwen3.7-plus",
   "qwen3.6-plus",
@@ -24,6 +26,12 @@ const RESPONSES_MODELS = new Set([
 ]);
 
 const BASE = "https://opencode.ai/zen/go/v1";
+const SESSION_HEADER = "x-opencode-session";
+const SESSION_FIELD = "runtimeOpencodeGoSession";
+
+function randomId(prefix) {
+  return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
+}
 
 function generateSessionId() {
   return `ses_${crypto.randomUUID().replace(/-/g, "")}`;
@@ -92,50 +100,81 @@ export class OpenCodeGoExecutor extends BaseExecutor {
     super("opencode-go", PROVIDERS["opencode-go"]);
   }
 
-  // buildUrl runs before buildHeaders in BaseExecutor.execute, cache model here
-  buildUrl(model) {
+  async execute(args) {
+    const credentials = args.credentials || {};
+    const session = resolveSessionId({
+      headers: credentials.rawHeaders,
+      body: args.body,
+      connectionId: credentials.connectionId,
+      scope: "opencode-go",
+    });
+    return super.execute({
+      ...args,
+      credentials: { ...credentials, [SESSION_FIELD]: session },
+    });
+  }
+
+  buildUrl(model, stream, urlIndex = 0, credentials = null) {
     this._lastModel = model;
-    return MESSAGES_FORMAT_MODELS.has(model)
+    const runtimeTransport = credentials?.runtimeTransport;
+    if (runtimeTransport?.baseUrl) {
+      return runtimeTransport.urlSuffix
+        ? `${runtimeTransport.baseUrl}${runtimeTransport.urlSuffix}`
+        : runtimeTransport.baseUrl;
+    }
+    const cleanModel = baseModelId(model);
+    return MESSAGES_FORMAT_MODELS.has(cleanModel)
       ? `${BASE}/messages`
-      : isResponsesModel(model)
+      : isResponsesModel(cleanModel)
         ? `${BASE}/responses`
         : `${BASE}/chat/completions`;
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, model) {
+    const runtimeTransport = credentials?.runtimeTransport;
     const key = credentials?.apiKey || credentials?.accessToken;
+    const effectiveModel = model || this._lastModel;
     const raw = Object.fromEntries(
       Object.entries(credentials?.rawHeaders || {}).map(([k, v]) => [k.toLowerCase(), v]),
     );
-    const headers = { "Content-Type": "application/json" };
-
-    if (MESSAGES_FORMAT_MODELS.has(this._lastModel)) {
+    const headers = {
+      "Content-Type": "application/json",
+      ...(runtimeTransport?.headers || {}),
+    };
+    const session = raw[SESSION_HEADER] || credentials?.[SESSION_FIELD]
+      || (credentials?.connectionId
+        ? resolveSessionId({
+          headers: credentials.rawHeaders,
+          connectionId: credentials.connectionId,
+          scope: "opencode-go",
+        })
+        : generateSessionId());
+    if (credentials && !credentials[SESSION_FIELD]) credentials[SESSION_FIELD] = session;
+    headers[SESSION_HEADER] = session;
+    headers["x-opencode-client"] ||= raw["x-opencode-client"] || "desktop";
+    headers["x-opencode-request"] ||= raw["x-opencode-request"] || randomId("msg");
+    headers["x-opencode-project"] ||= raw["x-opencode-project"] || "global";
+    const auth = runtimeTransport?.auth;
+    if (auth?.header) {
+      headers[auth.header] = auth.scheme === "bearer" ? `Bearer ${key}` : key;
+      if (auth.anthropicVersion && !headers["anthropic-version"]) {
+        headers["anthropic-version"] = ANTHROPIC_API_VERSION;
+      }
+    } else if (MESSAGES_FORMAT_MODELS.has(baseModelId(effectiveModel))) {
       headers["x-api-key"] = key;
       headers["anthropic-version"] = ANTHROPIC_API_VERSION;
     } else {
       headers["Authorization"] = `Bearer ${key}`;
     }
 
-    // OpenCode relay affinity/cache headers — mirror the sibling opencode zen
-    // executor. Client-provided values win; otherwise stable per-conversation
-    // ids so the relay keeps one backend warm across turns.
-    headers["x-opencode-client"] = raw["x-opencode-client"] || "desktop";
-    headers["x-opencode-session"] =
-      raw["x-opencode-session"] ||
-      credentials?.runtimeOpencodeSession ||
-      generateSessionId();
-    headers["x-opencode-request"] =
-      raw["x-opencode-request"] || generateRequestId();
-    headers["x-opencode-project"] = raw["x-opencode-project"] || "global";
-
     if (stream) headers["Accept"] = "text/event-stream";
     return headers;
   }
 
   transformRequest(model, body, stream, credentials) {
-    this._currentSessionId = resolveOpencodeSession(body, credentials);
-    if (credentials) credentials.runtimeOpencodeSession = this._currentSessionId;
-    if (isResponsesModel(model)) {
+    const isResponses = credentials?.runtimeTransport?.format === "openai-responses"
+      || (!credentials?.runtimeTransport && isResponsesModel(model));
+    if (isResponses) {
       // Responses API names the output cap max_output_tokens and takes thinking
       // as reasoning:{effort,summary} — normalize the Chat fields at this boundary.
       if (body.max_output_tokens === undefined) {

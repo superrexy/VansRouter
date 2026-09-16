@@ -116,6 +116,18 @@ async function fetchClaudeUsageRaw(accessToken, proxyOptions = null) {
         }
       }
 
+      // Model-scoped weekly limits arrive in limits[], not as seven_day_* keys.
+      if (Array.isArray(data.limits)) {
+        for (const limit of data.limits) {
+          if (limit?.kind !== "weekly_scoped") continue;
+          const modelName = String(limit?.scope?.model?.display_name || "").trim().toLowerCase();
+          if (!modelName || typeof limit.percent !== "number") continue;
+          quotas[`weekly ${modelName} (7d)`] = createQuotaObject({
+            utilization: Math.max(0, Math.min(100, limit.percent)),
+            resets_at: limit.resets_at,
+          });
+        }
+      }
       return {
         plan: "Claude Code",
         extraUsage: data.extra_usage ?? null,

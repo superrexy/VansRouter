@@ -118,9 +118,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install CLI package devDependencies
-        # cli/ is outside the pnpm workspace; install its build dependency explicitly.
-        run: npm install --prefix cli --no-audit --no-fund
+      - name: Install CLI package dependencies
+        # cli/ is outside the pnpm workspace; use its tracked lockfile for reproducible packaging.
+        run: npm ci --prefix cli --ignore-scripts --no-audit --no-fund
 
       - name: Build and pack CLI package
         id: pack
@@ -150,8 +150,8 @@ jobs:
           retention-days: 1
 
   publish-npm:
-    needs: [check-branch, package-npm, build-and-verify-ghcr]
-    if: needs.check-branch.outputs.is-main == 'true' && needs.package-npm.result == 'success' && needs.build-and-verify-ghcr.result == 'success'
+    needs: [check-branch, package-npm]
+    if: needs.check-branch.outputs.is-main == 'true' && needs.package-npm.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -186,8 +186,8 @@ jobs:
         run: npm publish "$RUNNER_TEMP/npm-package/vansrouter-${RELEASE_VERSION}.tgz" --provenance
 
   promote-ghcr:
-    needs: [check-branch, publish-npm, build-and-verify-ghcr]
-    if: needs.check-branch.outputs.is-main == 'true' && needs.publish-npm.result == 'success' && needs.build-and-verify-ghcr.result == 'success'
+    needs: [check-branch, build-and-verify-ghcr]
+    if: needs.check-branch.outputs.is-main == 'true' && needs.build-and-verify-ghcr.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

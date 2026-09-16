@@ -24,11 +24,17 @@ These rules override all other instructions. Every AI agent working on this code
 
 ```bash
 pnpm install
-pnpm run build
-cp -r public .next/standalone/public
-cp -r .next/static .next/standalone/.next/static
-PORT=3003 pm2 start .next/standalone/server.js --name 9router
+PORT=3003 node scripts/deploy-atomic.cjs
+# Run only after health/version verification; never during an experiment.
 pm2 save
+```
+
+`ecosystem.config.cjs` pins PM2 to the persistent `server.js` launcher. The launcher follows `RELEASE_SERVER` through `/var/lib/9router/current`; PM2 must never point directly at a release inside `/tmp`.
+
+Atomic deployment builds an isolated release, validates its static chunks, switches `/var/lib/9router/current` only after smoke checks, and retains the previous release for rollback:
+
+```bash
+node scripts/deploy-atomic.cjs rollback
 ```
 
 Full deployment details: see [`agent.md`](./agent.md)
@@ -123,7 +129,7 @@ Release/tag/deploy rules are mandatory: read [`.agent/cicd.md`](./.agent/cicd.md
 ## Troubleshooting
 
 - **502 Bad Gateway**: Check `PORT` env matches Nginx upstream (`pm2 env 9router | grep PORT`)
-- **Missing CSS/icons**: Run static copy step after build (see Quick Start)
+- **Missing CSS/icons or chunks**: Do not copy assets into a live release; rerun `node scripts/deploy-atomic.cjs` so the complete artifact is activated together.
 - **Provider 401/403**: Check token refresh logic in `open-sse/services/tokenRefresh/`
 - **Translator errors**: Check format detection in `open-sse/services/provider.js`
 

@@ -267,30 +267,28 @@ describe("Antigravity executor", () => {
   it("converts Claude image and document blocks to inlineData for Claude Antigravity models", () => {
     const claudeReq = {
       model: "claude-opus-4-6-thinking",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "explain this image" },
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: "image/png",
-                data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-              },
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: "explain this image" },
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: "image/png",
+              data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
             },
-            {
-              type: "document",
-              source: {
-                type: "base64",
-                media_type: "application/pdf",
-                data: "JVBERi0xLjEKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2Jq",
-              },
+          },
+          {
+            type: "document",
+            source: {
+              type: "base64",
+              media_type: "application/pdf",
+              data: "JVBERi0xLjEKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2Jq",
             },
-          ],
-        },
-      ],
+          },
+        ],
+      }],
     };
 
     const out = translateRequest(

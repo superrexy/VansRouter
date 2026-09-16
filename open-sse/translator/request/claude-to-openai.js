@@ -142,6 +142,10 @@ function systemReminderText(content) {
 
 // Convert single Claude message - returns single message or array of messages
 function convertClaudeMessage(msg) {
+  if (msg.content && typeof msg.content === "object" && !Array.isArray(msg.content)) {
+    msg.content = [msg.content];
+  }
+
   // Mid-conversation system message -> user (per Anthropic placement rules)
   if (msg.role === ROLE.SYSTEM) {
     const text = systemReminderText(msg.content);

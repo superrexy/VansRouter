@@ -143,6 +143,7 @@ const REFRESH_HANDLERS = {
   "codebuddy-intl": (c, log) => refreshCodebuddyToken(c.refreshToken, log, "codebuddy-intl"),
   gitlab: (c, log) => refreshAccessToken("gitlab", c.refreshToken, c, log),
   cline: (c, log) => refreshClineToken(c.refreshToken, log),
+  clinepass: (c, log) => refreshClineToken(c.refreshToken, log),
   // Kimi Code OAuth (merged into id `kimi`); legacy id still routes here
   kimi: (c, log) => refreshKimiToken(c.refreshToken, c, log),
   "kimi-coding": (c, log) => refreshKimiToken(c.refreshToken, c, log),
