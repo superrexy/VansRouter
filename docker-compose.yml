@@ -32,12 +32,9 @@ services:
       PORT: "20128"
       HOSTNAME: "0.0.0.0"
       NODE_ENV: production
-      HEADROOM_URL: http://headroom:8787
+      # HEADROOM_URL: http://headroom:8787
       # Set TAILSCALE_USE_HOST_SOCKET=true to reuse the host Tailscale daemon.
       # TAILSCALE_USE_HOST_SOCKET: "true"
-    depends_on:
-      headroom:
-        condition: service_started
     healthcheck:
       # localhost resolves to ::1 in Alpine wget first; the server binds IPv4
       # 0.0.0.0 only, so probe 127.0.0.1 explicitly.
