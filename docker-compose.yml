@@ -47,17 +47,17 @@ services:
       retries: 3
       start_period: 10s
 
-  headroom:
-    image: ghcr.io/chopratejas/headroom:latest
-    container_name: headroom
-    restart: unless-stopped
-    ports:
-      - "${HEADROOM_PORT:-8787}:8787"
-    environment:
-      # Bind on all interfaces inside the container so both the vansrouter
-      # service (http://headroom:8787) and host clients reach it.
-      HEADROOM_HOST: 0.0.0.0
-      HEADROOM_PORT: "8787"
+  # headroom:
+  #   image: ghcr.io/chopratejas/headroom:latest
+  #   container_name: headroom
+  #   restart: unless-stopped
+  #   ports:
+  #     - "${HEADROOM_PORT:-8787}:8787"
+  #   environment:
+  #     # Bind on all interfaces inside the container so both the vansrouter
+  #     # service (http://headroom:8787) and host clients reach it.
+  #     HEADROOM_HOST: 0.0.0.0
+  #     HEADROOM_PORT: "8787"
 
 volumes:
   9router-data:
